@@ -21,3 +21,11 @@ The written requirements define the general behavior.
 Approved example input/output PowerPoint files define the expected application of these requirements and serve as acceptance-test cases.
 
 Where a written requirement is ambiguous, the approved example case shall clarify the intended behavior.
+
+## R2 — Command-Line Interface
+
+1. The program shall provide a command-line interface that accepts an input PowerPoint file path and an output PowerPoint file path.
+2. The input and output paths shall use the `.pptx` file extension.
+3. The input file shall exist before processing begins.
+4. The input file shall not be overwritten; the output path shall be different from the input path.
+5. After successful processing, the command shall report the output path and the number of logical hyperlinks created.

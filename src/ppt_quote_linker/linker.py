@@ -19,6 +19,10 @@ REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 HYPERLINK_REL = f"{R_NS}/hyperlink"
 NS = {"a": A_NS, "r": R_NS}
 TargetSource: TypeAlias = str | Mapping[str, str] | Callable[[str, str], str]
+DEFAULT_TARGET_TEMPLATE = (
+    "https://play.google.com/books/reader?"
+    "id=tLZ3EAAAQBAJ&pg=GBS.PA197&hl=en&q={query}"
+)
 _CITATION = re.compile(r"\s*\([^()\r\n]*\)")
 
 
