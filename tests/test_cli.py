@@ -14,7 +14,7 @@ def test_cli_creates_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert main([str(CASE / "input.pptx"), str(output)]) == 0
 
     assert output.is_file()
-    assert "with 6 hyperlinks" in capsys.readouterr().out
+    assert "with 24 hyperlinks" in capsys.readouterr().out
 
 
 def test_cli_rejects_missing_input(tmp_path: Path) -> None:

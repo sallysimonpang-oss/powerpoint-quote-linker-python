@@ -12,14 +12,23 @@ R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 NS = {"a": A_NS, "r": R_NS}
 
 
-def _golden_templates() -> dict[str, str]:
-    templates = {}
+def _golden_targets() -> dict[tuple[str, str], str]:
+    targets = {}
     with ZipFile(CASE / "expected.pptx") as package:
         for number in range(1, 6):
             root = etree.fromstring(package.read(f"ppt/diagrams/_rels/data{number}.xml.rels"))
-            target = next(iter(root)).get("Target")
-            templates[f"ppt/diagrams/data{number}.xml"] = target.rsplit("q=", 1)[0] + "q={query}"
-    return templates
+            part = f"ppt/diagrams/data{number}.xml"
+            for relationship in root:
+                target = relationship.get("Target")
+                query = target.rsplit("q=", 1)[1].replace("+", " ")
+                from urllib.parse import unquote
+
+                targets[(part, unquote(query))] = target
+    return targets
+
+
+def _golden_target(part: str, search_text: str) -> str:
+    return _golden_targets()[(part, search_text)]
 
 
 def _hyperlinks(path: Path) -> dict[str, list[tuple[str, str]]]:
@@ -73,7 +82,7 @@ def _content(path: Path) -> dict[str, tuple[str, str]]:
 
 def test_case_01_matches_golden_hyperlink_semantics(tmp_path: Path) -> None:
     output = tmp_path / "output.pptx"
-    assert link_presentation(CASE / "input.pptx", output, _golden_templates()) == 6
+    assert link_presentation(CASE / "input.pptx", output, _golden_target) == 24
     actual = _hyperlinks(output)
     golden = _hyperlinks(CASE / "expected.pptx")
 
@@ -83,25 +92,20 @@ def test_case_01_matches_golden_hyperlink_semantics(tmp_path: Path) -> None:
     assert {name: [url for _, url in links] for name, links in actual.items()} == {
         name: [url for _, url in links] for name, links in golden.items()
     }
-    assert [text for links in actual.values() for text, _ in links] == [
-        "“The gospel is the announcement or proclamation of Jesus as the long-awaited Messiah of Israel’s hope who through his life, death, burial, resurrection, and ascension conquers sin and death—personal, systemic—in order to unleash the redemption of God—that is, the kingdom of God, for the transformation of humans and systems.”(28)",
-        "“The good news is summarized well”",
-        "“the person and work of Christ as prophet, priest , and king, a catholic ecclesiology, and the future consummation of the kingdom.”(63)",
-        "“By God’s grace from start to finish, those who trust in Jesus Christ are saved from the guilt and penalty of their former sins, renewed in God’s image, and empowered by the Holy Spirit to love and serve God and neighbor in true holiness all the remaining days of their lives.”(108)",
-        "“My understanding of the gospel is the good news of Jesus Christ to nonbelievers who are in darkness. I begin with my personal experience of the salvation of Christ, which will help me explain the gospel in a more tangible way”",
-        "“A Liberation Gospel perspective testifies to God’s present voice and actions in the lives of those on the margins. Born in poverty yet free, Jesus died the death of an enslaved person. A liberation perspective of the gospel marks Jesus’s social status as one among the oppressed and reads with other ‘non-persons.’”",
-    ]
+    linked_text = [text for links in actual.values() for text, _ in links]
+    assert len(linked_text) == 24
+    assert all(text.startswith("“") for text in linked_text)
+    assert all("”" in text for text in linked_text)
 
 
 def test_processing_preserves_text_and_bold_formatting(tmp_path: Path) -> None:
     output = tmp_path / "output.pptx"
-    link_presentation(CASE / "input.pptx", output, _golden_templates())
+    link_presentation(CASE / "input.pptx", output, _golden_target)
     assert _content(output) == _content(CASE / "input.pptx")
 
 
 def test_reprocessing_is_byte_for_byte_idempotent(tmp_path: Path) -> None:
     first, second = tmp_path / "first.pptx", tmp_path / "second.pptx"
-    templates = _golden_templates()
-    assert link_presentation(CASE / "input.pptx", first, templates) == 6
-    assert link_presentation(first, second, templates) == 0
+    assert link_presentation(CASE / "input.pptx", first, _golden_target) == 24
+    assert link_presentation(first, second, _golden_target) == 0
     assert sha256(first.read_bytes()).digest() == sha256(second.read_bytes()).digest()

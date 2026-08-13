@@ -27,7 +27,7 @@ _CITATION = re.compile(r"\s*\([^()\r\n]*\)")
 
 
 def link_presentation(input_path: str | Path, output_path: str | Path, target: TargetSource) -> int:
-    """Link quotes in the first quote-bearing paragraph of each SmartArt part.
+    """Link every qualifying quote in each SmartArt part.
 
     ``target`` is a URL template containing ``{query}``, a mapping from diagram
     data part to template, or a callback accepting ``(part_name, search_text)``.
@@ -74,23 +74,36 @@ class _PartResult:
 
 def _transform_part(xml: bytes, target_part: str, target: TargetSource) -> _PartResult:
     root = etree.fromstring(xml, etree.XMLParser(remove_blank_text=False))
+    relationships: list[tuple[str, str]] = []
+    changed = False
+    used_ids = set(root.xpath(".//a:hlinkClick/@r:id", namespaces=NS))
+    next_id = 1
+
     for paragraph in root.xpath(".//a:p", namespaces=NS):
         ranges = _qualifying_quotes(paragraph)
-        if not ranges:
-            continue
-        relationships, changed = [], False
-        for index, (start, end, search_text) in enumerate(ranges, 1):
+        for start, end, search_text in ranges:
             url = _resolve_target(target, target_part, search_text)
             existing_id = _range_hyperlink_id(paragraph, start, end)
-            relationship_id = existing_id or f"rId{index}"
+            if existing_id is None:
+                while f"rId{next_id}" in used_ids:
+                    next_id += 1
+                relationship_id = f"rId{next_id}"
+                used_ids.add(relationship_id)
+                next_id += 1
+            else:
+                relationship_id = existing_id
             if existing_id is None:
                 _apply_hyperlink(paragraph, start, end, relationship_id)
                 changed = True
             relationships.append((relationship_id, url))
-        if not changed:
-            return _PartResult(xml, relationships, False)
-        return _PartResult(etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True), relationships, True)
-    return _PartResult(xml, [], False)
+
+    if not changed:
+        return _PartResult(xml, relationships, False)
+    return _PartResult(
+        etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True),
+        relationships,
+        True,
+    )
 
 
 def _qualifying_quotes(paragraph: etree._Element) -> list[tuple[int, int, str]]:
@@ -100,8 +113,13 @@ def _qualifying_quotes(paragraph: etree._Element) -> list[tuple[int, int, str]]:
     for run in runs:
         run_text = "".join(run.xpath("./a:t/text()", namespaces=NS))
         rpr = run.find(f"{{{A_NS}}}rPr")
-        if rpr is not None and rpr.get("b") in {"1", "true"} and run_text:
-            bold_ranges.append((position, position + len(run_text), run_text))
+        is_bold = rpr is not None and rpr.get("b") in {"1", "true"}
+        if is_bold and run_text:
+            if bold_ranges and bold_ranges[-1][1] == position:
+                start, _, previous_text = bold_ranges[-1]
+                bold_ranges[-1] = (start, position + len(run_text), previous_text + run_text)
+            else:
+                bold_ranges.append((position, position + len(run_text), run_text))
         position += len(run_text)
     result, cursor = [], 0
     while True:
